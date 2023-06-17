@@ -135,7 +135,7 @@ func (k *KraWeb) ListenAndServe() error {
 			GetCertificate: localClient.GetCertificate,
 		})
 
-		log.Printf("Serving http://%s/ ...", k.hostname)
+		log.Printf("Serving https://%s/ ...", k.hostname)
 		if err := tshttpSrv.Serve(ts443); err != nil {
 			log.Fatalf("failed to start https server in Tailscale: %s", err)
 		}
