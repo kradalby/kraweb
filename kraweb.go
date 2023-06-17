@@ -128,20 +128,17 @@ func (k *KraWeb) ListenAndServe() error {
 		ReadTimeout: 5 * time.Minute,
 	}
 
-	if *dev != "" {
-		// override default hostname for dev mode
-		if *hostname == defaultHostname {
-			if h, p, err := net.SplitHostPort(*dev); err == nil {
-				if h == "" {
-					h = "localhost"
-				}
-				*hostname = fmt.Sprintf("%s:%s", h, p)
+	if k.dev != "" {
+		if h, p, err := net.SplitHostPort(k.dev); err == nil {
+			if h == "" {
+				h = "localhost"
 			}
+			k.hostname = fmt.Sprintf("%s:%s", h, p)
 		}
 
-		tshttpSrv.Addr = *dev
+		tshttpSrv.Addr = k.dev
 
-		log.Printf("Running in dev mode on %s ...", *dev)
+		log.Printf("Running in dev mode on %s ...", k.dev)
 		log.Fatal(tshttpSrv.ListenAndServe())
 	}
 
