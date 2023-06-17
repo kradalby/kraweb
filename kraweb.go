@@ -29,7 +29,7 @@ type KraWeb struct {
 	tsKeyPath  string
 	controlURL string
 	verbose    bool
-	localPort  int
+	localAddr  string
 	logger     *log.Logger
 }
 
@@ -40,7 +40,7 @@ func NewKraWeb(
 	tsKeyPath string,
 	controlURL string,
 	verbose bool,
-	localPort int,
+	localAddr string,
 	logger *log.Logger,
 ) KraWeb {
 	return KraWeb{
@@ -50,7 +50,7 @@ func NewKraWeb(
 		tsKeyPath:   tsKeyPath,
 		controlURL:  controlURL,
 		verbose:     verbose,
-		localPort:   localPort,
+		localAddr:   localAddr,
 		logger:      logger,
 	}
 }
@@ -153,12 +153,12 @@ func (k *KraWeb) ListenAndServe() error {
 		}
 	}()
 
-	localListen, err := net.Listen("tcp", fmt.Sprintf(":%d", k.localPort))
+	localListen, err := net.Listen("tcp", k.localAddr)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Serving http://%s:%d/ ...", "localhost", k.localPort)
+	log.Printf("Serving http://%s/ ...", k.localAddr)
 	if err := httpSrv.Serve(localListen); err != nil {
 		return err
 	}
