@@ -29,7 +29,6 @@ type KraWeb struct {
 	tsKeyPath  string
 	controlURL string
 	verbose    bool
-	dev        string
 	localPort  int
 	logger     *log.Logger
 }
@@ -41,7 +40,6 @@ func NewKraWeb(
 	tsKeyPath string,
 	controlURL string,
 	verbose bool,
-	dev string,
 	localPort int,
 	logger *log.Logger,
 ) KraWeb {
@@ -52,7 +50,6 @@ func NewKraWeb(
 		tsKeyPath:   tsKeyPath,
 		controlURL:  controlURL,
 		verbose:     verbose,
-		dev:         dev,
 		localPort:   localPort,
 		logger:      logger,
 	}
@@ -126,20 +123,6 @@ func (k *KraWeb) ListenAndServe() error {
 		Handler:     tsmux,
 		ErrorLog:    k.logger,
 		ReadTimeout: 5 * time.Minute,
-	}
-
-	if k.dev != "" {
-		if h, p, err := net.SplitHostPort(k.dev); err == nil {
-			if h == "" {
-				h = "localhost"
-			}
-			k.hostname = fmt.Sprintf("%s:%s", h, p)
-		}
-
-		tshttpSrv.Addr = k.dev
-
-		log.Printf("Running in dev mode on %s ...", k.dev)
-		log.Fatal(tshttpSrv.ListenAndServe())
 	}
 
 	// Starting HTTPS server
