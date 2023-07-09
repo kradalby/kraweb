@@ -17,12 +17,6 @@ import (
 )
 
 type KraWeb struct {
-	// pubHandlers contains endpoints that should be available over both localhost and Tailscale
-	pubHandlers map[string]http.Handler
-
-	// tsHandlers contains endpoints that should only be available over Tailscale
-	tsHandlers map[string]http.Handler
-
 	// hostname is the name that will be used when joining Tailscale
 	hostname string
 
@@ -31,11 +25,12 @@ type KraWeb struct {
 	verbose    bool
 	localAddr  string
 	logger     *log.Logger
+
+	mux   *http.ServeMux
+	tsmux *http.ServeMux
 }
 
 func NewKraWeb(
-	pubHandlers map[string]http.Handler,
-	tsHandlers map[string]http.Handler,
 	hostname string,
 	tsKeyPath string,
 	controlURL string,
@@ -43,23 +38,31 @@ func NewKraWeb(
 	localAddr string,
 	logger *log.Logger,
 ) KraWeb {
-	return KraWeb{
-		pubHandlers: pubHandlers,
-		tsHandlers:  tsHandlers,
-		hostname:    hostname,
-		tsKeyPath:   tsKeyPath,
-		controlURL:  controlURL,
-		verbose:     verbose,
-		localAddr:   localAddr,
-		logger:      logger,
+	k := KraWeb{
+		hostname:   hostname,
+		tsKeyPath:  tsKeyPath,
+		controlURL: controlURL,
+		verbose:    verbose,
+		localAddr:  localAddr,
+		logger:     logger,
 	}
+	k.mux = http.NewServeMux()
+	k.tsmux = http.NewServeMux()
+
+	return k
+}
+
+func (k *KraWeb) Handle(pattern string, handler http.Handler) {
+	k.mux.Handle(pattern, handler)
+	k.tsmux.Handle(pattern, handler)
+}
+
+func (k *KraWeb) HandleTSOnly(pattern string, handler http.Handler) {
+	k.tsmux.Handle(pattern, handler)
 }
 
 func (k *KraWeb) ListenAndServe() error {
-	mux := http.NewServeMux()
-	tsmux := http.NewServeMux()
-
-	tsweb.Debugger(tsmux)
+	tsweb.Debugger(k.tsmux)
 
 	k.logger.SetPrefix("kraweb: ")
 	log := k.logger
@@ -89,8 +92,8 @@ func (k *KraWeb) ListenAndServe() error {
 
 	localClient, _ := tsSrv.LocalClient()
 
-	tsmux.Handle("/metrics", promhttp.Handler())
-	tsmux.Handle("/who", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	k.tsmux.Handle("/metrics", promhttp.Handler())
+	k.tsmux.Handle("/who", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		who, err := localClient.WhoIs(r.Context(), r.RemoteAddr)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
@@ -104,23 +107,14 @@ func (k *KraWeb) ListenAndServe() error {
 			r.RemoteAddr)
 	}))
 
-	for pattern, handler := range k.pubHandlers {
-		mux.Handle(pattern, handler)
-		tsmux.Handle(pattern, handler)
-	}
-
-	for pattern, handler := range k.tsHandlers {
-		tsmux.Handle(pattern, handler)
-	}
-
 	httpSrv := &http.Server{
-		Handler:     mux,
+		Handler:     k.mux,
 		ErrorLog:    k.logger,
 		ReadTimeout: 5 * time.Minute,
 	}
 
 	tshttpSrv := &http.Server{
-		Handler:     tsmux,
+		Handler:     k.tsmux,
 		ErrorLog:    k.logger,
 		ReadTimeout: 5 * time.Minute,
 	}
