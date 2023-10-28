@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"tailscale.com/client/tailscale"
 	"tailscale.com/tsnet"
 	"tailscale.com/tsweb"
 )
@@ -29,6 +30,7 @@ type KraWeb struct {
 
 	mux   *http.ServeMux
 	tsmux *http.ServeMux
+	tsSrv *tsnet.Server
 }
 
 func NewKraWeb(
@@ -52,6 +54,14 @@ func NewKraWeb(
 	k.mux = http.NewServeMux()
 	k.tsmux = http.NewServeMux()
 
+	tsSrv := &tsnet.Server{
+		Hostname:   k.hostname,
+		Logf:       func(format string, args ...any) {},
+		ControlURL: k.controlURL,
+	}
+
+	k.tsSrv = tsSrv
+
 	return k
 }
 
@@ -64,17 +74,24 @@ func (k *KraWeb) HandleTSOnly(pattern string, handler http.Handler) {
 	k.tsmux.Handle(pattern, handler)
 }
 
+func (k *KraWeb) TailscaleLocalClient() *tailscale.LocalClient {
+	if k.tsSrv == nil {
+		return nil
+	}
+
+	localClient, err := k.tsSrv.LocalClient()
+	if err != nil {
+		return nil
+	}
+
+	return localClient
+}
+
 func (k *KraWeb) ListenAndServe() error {
 	tsweb.Debugger(k.tsmux)
 
 	k.logger.SetPrefix("kraweb: ")
 	log := k.logger
-
-	tsSrv := &tsnet.Server{
-		Hostname:   k.hostname,
-		Logf:       func(format string, args ...any) {},
-		ControlURL: k.controlURL,
-	}
 
 	if k.tsKeyPath != "" {
 		key, err := os.ReadFile(k.tsKeyPath)
@@ -82,19 +99,19 @@ func (k *KraWeb) ListenAndServe() error {
 			return err
 		}
 
-		tsSrv.AuthKey = strings.TrimSuffix(string(key), "\n")
+		k.tsSrv.AuthKey = strings.TrimSuffix(string(key), "\n")
 	}
 
 	if k.verbose {
-		tsSrv.Logf = log.Printf
+		k.tsSrv.Logf = log.Printf
 	}
 
 	if k.noTS {
-		if err := tsSrv.Start(); err != nil {
+		if err := k.tsSrv.Start(); err != nil {
 			return err
 		}
 
-		localClient, _ := tsSrv.LocalClient()
+		localClient, _ := k.tsSrv.LocalClient()
 
 		k.tsmux.Handle("/metrics", promhttp.Handler())
 		k.tsmux.Handle("/who", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +136,7 @@ func (k *KraWeb) ListenAndServe() error {
 
 		// Starting HTTPS server
 		go func() {
-			ts443, err := tsSrv.Listen("tcp", ":443")
+			ts443, err := k.tsSrv.Listen("tcp", ":443")
 			if err != nil {
 				log.Printf("failed to start https server: %s", err)
 			}
@@ -134,7 +151,7 @@ func (k *KraWeb) ListenAndServe() error {
 		}()
 
 		go func() {
-			ts80, err := tsSrv.Listen("tcp", ":80")
+			ts80, err := k.tsSrv.Listen("tcp", ":80")
 			if err != nil {
 				log.Printf("failed to start http server: %s", err)
 			}
