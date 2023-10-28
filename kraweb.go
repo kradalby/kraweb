@@ -25,6 +25,7 @@ type KraWeb struct {
 	verbose    bool
 	localAddr  string
 	logger     *log.Logger
+	noTS       bool
 
 	mux   *http.ServeMux
 	tsmux *http.ServeMux
@@ -37,6 +38,7 @@ func NewKraWeb(
 	verbose bool,
 	localAddr string,
 	logger *log.Logger,
+	noTS bool,
 ) KraWeb {
 	k := KraWeb{
 		hostname:   hostname,
@@ -45,6 +47,7 @@ func NewKraWeb(
 		verbose:    verbose,
 		localAddr:  localAddr,
 		logger:     logger,
+		noTS:       noTS,
 	}
 	k.mux = http.NewServeMux()
 	k.tsmux = http.NewServeMux()
@@ -86,66 +89,68 @@ func (k *KraWeb) ListenAndServe() error {
 		tsSrv.Logf = log.Printf
 	}
 
-	if err := tsSrv.Start(); err != nil {
-		return err
-	}
-
-	localClient, _ := tsSrv.LocalClient()
-
-	k.tsmux.Handle("/metrics", promhttp.Handler())
-	k.tsmux.Handle("/who", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		who, err := localClient.WhoIs(r.Context(), r.RemoteAddr)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-
-			return
+	if k.noTS {
+		if err := tsSrv.Start(); err != nil {
+			return err
 		}
-		fmt.Fprintf(w, "<html><body><h1>Hello, world!</h1>\n")
-		fmt.Fprintf(w, "<p>You are <b>%s</b> from <b>%s</b> (%s)</p>",
-			html.EscapeString(who.UserProfile.LoginName),
-			html.EscapeString(firstLabel(who.Node.ComputedName)),
-			r.RemoteAddr)
-	}))
+
+		localClient, _ := tsSrv.LocalClient()
+
+		k.tsmux.Handle("/metrics", promhttp.Handler())
+		k.tsmux.Handle("/who", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			who, err := localClient.WhoIs(r.Context(), r.RemoteAddr)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+
+				return
+			}
+			fmt.Fprintf(w, "<html><body><h1>Hello, world!</h1>\n")
+			fmt.Fprintf(w, "<p>You are <b>%s</b> from <b>%s</b> (%s)</p>",
+				html.EscapeString(who.UserProfile.LoginName),
+				html.EscapeString(firstLabel(who.Node.ComputedName)),
+				r.RemoteAddr)
+		}))
+
+		tshttpSrv := &http.Server{
+			Handler:     k.tsmux,
+			ErrorLog:    k.logger,
+			ReadTimeout: 5 * time.Minute,
+		}
+
+		// Starting HTTPS server
+		go func() {
+			ts443, err := tsSrv.Listen("tcp", ":443")
+			if err != nil {
+				log.Printf("failed to start https server: %s", err)
+			}
+			ts443 = tls.NewListener(ts443, &tls.Config{
+				GetCertificate: localClient.GetCertificate,
+			})
+
+			log.Printf("Serving https://%s/ ...", k.hostname)
+			if err := tshttpSrv.Serve(ts443); err != nil {
+				log.Fatalf("failed to start https server in Tailscale: %s", err)
+			}
+		}()
+
+		go func() {
+			ts80, err := tsSrv.Listen("tcp", ":80")
+			if err != nil {
+				log.Printf("failed to start http server: %s", err)
+			}
+
+			log.Printf("Serving http://%s/ ...", k.hostname)
+			if err := tshttpSrv.Serve(ts80); err != nil {
+				log.Fatalf("failed to start http server in Tailscale: %s", err)
+			}
+		}()
+	}
 
 	httpSrv := &http.Server{
 		Handler:     k.mux,
 		ErrorLog:    k.logger,
 		ReadTimeout: 5 * time.Minute,
 	}
-
-	tshttpSrv := &http.Server{
-		Handler:     k.tsmux,
-		ErrorLog:    k.logger,
-		ReadTimeout: 5 * time.Minute,
-	}
-
-	// Starting HTTPS server
-	go func() {
-		ts443, err := tsSrv.Listen("tcp", ":443")
-		if err != nil {
-			log.Printf("failed to start https server: %s", err)
-		}
-		ts443 = tls.NewListener(ts443, &tls.Config{
-			GetCertificate: localClient.GetCertificate,
-		})
-
-		log.Printf("Serving https://%s/ ...", k.hostname)
-		if err := tshttpSrv.Serve(ts443); err != nil {
-			log.Fatalf("failed to start https server in Tailscale: %s", err)
-		}
-	}()
-
-	go func() {
-		ts80, err := tsSrv.Listen("tcp", ":80")
-		if err != nil {
-			log.Printf("failed to start http server: %s", err)
-		}
-
-		log.Printf("Serving http://%s/ ...", k.hostname)
-		if err := tshttpSrv.Serve(ts80); err != nil {
-			log.Fatalf("failed to start http server in Tailscale: %s", err)
-		}
-	}()
 
 	localListen, err := net.Listen("tcp", k.localAddr)
 	if err != nil {
