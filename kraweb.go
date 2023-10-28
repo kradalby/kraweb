@@ -90,7 +90,6 @@ func (k *KraWeb) TailscaleLocalClient() *tailscale.LocalClient {
 func (k *KraWeb) ListenAndServe() error {
 	tsweb.Debugger(k.tsmux)
 
-	k.logger.SetPrefix("kraweb: ")
 	log := k.logger
 
 	if k.tsKeyPath != "" {
