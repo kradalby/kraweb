@@ -127,6 +127,13 @@ func (k *KraWeb) ListenAndServe() error {
 				r.RemoteAddr)
 		}))
 
+		k.tsmux.Handle(
+			"/quitquitquit",
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				os.Exit(0)
+			}),
+		)
+
 		tshttpSrv := &http.Server{
 			Handler:     k.tsmux,
 			ErrorLog:    k.logger,
