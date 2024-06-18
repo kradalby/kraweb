@@ -22,7 +22,7 @@
         buildInputs = with pkgs; [
           golangci-lint
           git
-          go_1_20
+          go_1_22
         ];
       };
     });
