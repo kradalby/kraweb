@@ -21,12 +21,12 @@ type KraWeb struct {
 	// hostname is the name that will be used when joining Tailscale
 	hostname string
 
-	tsKeyPath  string
-	controlURL string
-	verbose    bool
-	localAddr  string
-	logger     *log.Logger
-	noTS       bool
+	tsKeyPath       string
+	controlURL      string
+	verbose         bool
+	localAddr       string
+	logger          *log.Logger
+	enableTailscale bool
 
 	mux   *http.ServeMux
 	tsmux *http.ServeMux
@@ -40,16 +40,16 @@ func NewKraWeb(
 	verbose bool,
 	localAddr string,
 	logger *log.Logger,
-	noTS bool,
+	enableTailscale bool,
 ) KraWeb {
 	k := KraWeb{
-		hostname:   hostname,
-		tsKeyPath:  tsKeyPath,
-		controlURL: controlURL,
-		verbose:    verbose,
-		localAddr:  localAddr,
-		logger:     logger,
-		noTS:       noTS,
+		hostname:        hostname,
+		tsKeyPath:       tsKeyPath,
+		controlURL:      controlURL,
+		verbose:         verbose,
+		localAddr:       localAddr,
+		logger:          logger,
+		enableTailscale: enableTailscale,
 	}
 	k.mux = http.NewServeMux()
 	k.tsmux = http.NewServeMux()
@@ -105,7 +105,7 @@ func (k *KraWeb) ListenAndServe() error {
 		k.tsSrv.Logf = log.Printf
 	}
 
-	if k.noTS {
+	if k.enableTailscale {
 		if err := k.tsSrv.Start(); err != nil {
 			return err
 		}
